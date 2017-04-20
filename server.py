@@ -15,21 +15,12 @@ class TCPHandler (socketserver.BaseRequestHandler):
     client.
     """
     #loggedIn = False
+    def __init__(self, functions, *args, **keys):
+        self.authenticate = functions['authenticate']
+        self.sendMessage = functions['sendMessage']
+        self.recvMessage = functions['recvMessage']
 
-    def recvMessage(self):
-        return self.request.recv(1024).strip()
-    def sendMessage(self, message):
-        self.request.sendall(message)
-
-    def authenticate(self):
-        sendMessage(self, "Welcome! \n Please enter your username: ")
-        user = recvMessage()
-        sendMessage(self, "Please enter your password: ")
-        password = recvMessage()
-
-        sendMessage(self, "Congrats. You have logged in! (%s, %s)" %
-                (user, password))
-        self.loggedIn = True
+        socketserver.BaseRequestHandler.__init__(self, *args, **keys)
 
 
     def handle(self):
@@ -40,24 +31,45 @@ class TCPHandler (socketserver.BaseRequestHandler):
 
         while (keepRunning):
             if (not self.loggedIn):
-                authenticate()
+                self.loggedIn = self.authenticate(self, self.recvMessage, self.sendMessage)
             else:
-                command = recvMessage(self)
+                command = str(self.recvMessage(self), "utf-8")
+                print(command)
                 if (command == "logout"):
                     keepRunning = False
-                    sendMessage("Goodbye!")
+                    self.sendMessage(self, "Goodbye!")
                 elif (command == "hello"):
-                    sendMessage("Hello there!")
+                    sendMessage(self, "Hello there!")
 
-        #dPrint("{} wrote:".format(self.client_address[0]))
-        #dPrint(self.data)
-        # just send back the same data, but upper-cased
-        # self.request.sendall(self.data.upper())
+def authenticate(self, recvMessage, sendMessage):
+    self.sendMessage(self, "Welcome! \nPlease enter your username: ")
+    user = self.recvMessage(self)
+    self.sendMessage(self, "Please enter your password: ")
+    password = recvMessage(self)
+
+    self.sendMessage(self, "Congrats. You have logged in! (%s, %s)" %
+            (user, password))
+    return True
+
+def recvMessage(self):
+    return self.request.recv(1024).strip()
+def sendMessage(self, message):
+    self.request.sendall(message.encode('utf-8'))
 
 # Debug print - only print if debug enabled
 def dPrint(message):
     if debug == True:
         print(message)
+
+def createHandler():
+    def make(*args, **keys):
+        functions = {}
+        functions['authenticate'] = authenticate
+        functions['recvMessage'] = recvMessage
+        functions['sendMessage'] = sendMessage
+
+        return TCPHandler(functions, *args, **keys)
+    return make
 
 # main function
 if __name__ == "__main__":
@@ -80,7 +92,7 @@ if __name__ == "__main__":
                             % (port, blockDuration, timeout))
             dPrint("Hello World!")
             host = "localhost"
-            server = socketserver.TCPServer((host, port), TCPHandler)
+            server = socketserver.TCPServer((host, port), createHandler())
             server.serve_forever()
 
         except Exception as err:
