@@ -14,13 +14,6 @@ class TCPHandler (socketserver.BaseRequestHandler):
     override the handle() method to implement communication to the
     client.
     """
-    #loggedIn = False
-    def __init__(self, functions, *args, **keys):
-        self.authenticate = functions['authenticate']
-        self.sendMessage = functions['sendMessage']
-        self.recvMessage = functions['recvMessage']
-
-        socketserver.BaseRequestHandler.__init__(self, *args, **keys)
 
 
     def handle(self):
@@ -28,28 +21,55 @@ class TCPHandler (socketserver.BaseRequestHandler):
         # self.request is the TCP socket connected to the client
         #self.data = self.request.recv(1024).strip()
         keepRunning = True
+        numEmptyCommand = 0
 
-        while (keepRunning):
-            if (not self.loggedIn):
-                self.loggedIn = self.authenticate(self, self.recvMessage, self.sendMessage)
-            else:
-                command = str(self.recvMessage(self), "utf-8")
-                print(command)
-                if (command == "logout"):
-                    keepRunning = False
-                    self.sendMessage(self, "Goodbye!")
-                elif (command == "hello"):
-                    sendMessage(self, "Hello there!")
+        while (keepRunning and numEmptyCommand < 100):
+            try:
+                if (not self.loggedIn):
+                    self.loggedIn = authenticate(self)
+                else:
+                    output = ' '
+                    command = str(recvMessage(self), "utf-8")
 
-def authenticate(self, recvMessage, sendMessage):
-    self.sendMessage(self, "Welcome! \nPlease enter your username: ")
-    user = self.recvMessage(self)
-    self.sendMessage(self, "Please enter your password: ")
-    password = recvMessage(self)
+                    # command validation
+                    if len(command) == 0:
+                        numEmptyCommand += 1
+                        continue
 
-    self.sendMessage(self, "Congrats. You have logged in! (%s, %s)" %
-            (user, password))
-    return True
+                    if (command == "logout"):
+                        keepRunning = False
+                        output = "Goodbye!"
+
+                    elif (command == "hello"):
+                        output = "Hello there!"
+                    sendMessage(self, output)
+            except Exception as err:
+                dPrint("Exception occurred. Closing connection")
+                break
+
+def authenticate(self):
+    sendMessage(self, "Welcome! \nPlease enter your username: ")
+    user = str(recvMessage(self), "utf-8").rstrip()
+    sendMessage(self, "Please enter your password: ")
+    password = str(recvMessage(self), "utf-8").rstrip()
+
+    # credential format = <user> <password>
+    try:
+        with open ("credentials.txt") as f:
+            for line in f:
+                credential = line.split(" ")
+                if user == credential[0].rstrip():
+                    if password == credential[1].rstrip():
+                        sendMessage(self, "Congrats. You have logged in!")
+                        return True
+
+    except Exception as err:
+        sendMessage(self, "Internal Server Error")
+        dPrint("An exception has occurred")
+        dPrint(err)
+
+    sendMessage(self, "Invalid username or password\n")
+    return False
 
 def recvMessage(self):
     return self.request.recv(1024).strip()
@@ -60,16 +80,6 @@ def sendMessage(self, message):
 def dPrint(message):
     if debug == True:
         print(message)
-
-def createHandler():
-    def make(*args, **keys):
-        functions = {}
-        functions['authenticate'] = authenticate
-        functions['recvMessage'] = recvMessage
-        functions['sendMessage'] = sendMessage
-
-        return TCPHandler(functions, *args, **keys)
-    return make
 
 # main function
 if __name__ == "__main__":
@@ -92,7 +102,7 @@ if __name__ == "__main__":
                             % (port, blockDuration, timeout))
             dPrint("Hello World!")
             host = "localhost"
-            server = socketserver.TCPServer((host, port), createHandler())
+            server = socketserver.TCPServer((host, port), TCPHandler)
             server.serve_forever()
 
         except Exception as err:
