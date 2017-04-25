@@ -1,114 +1,113 @@
-#!/usr/bin/python3
-# COMP3331 17s1 Assignment 1 - Instant Messaging Server
-# Weilon Ying z5059444
-# This is a Python 3 program.
+# COMP3331 Assignment
+# Server
+# Weilon Ying (z5059444)
+# Written with some assistance from code.activestate.com/recipes/531824-chat-server-client-using-selectselect/
 
+import select
+import socket
 import sys
-import socketserver
+import signal
 
-class TCPHandler (socketserver.BaseRequestHandler):
-    """
-    The request handler class for our server.
-
-    It is instantiated once per connection to the server, and must
-    override the handle() method to implement communication to the
-    client.
-    """
-
-
-    def handle(self):
+class User(object):
+    def __init__(self, name, host, sock, server):
+        self.name = name
+        self.host = host
+        self.sock = sock
+        self.server = server
         self.loggedIn = False
-        # self.request is the TCP socket connected to the client
-        #self.data = self.request.recv(1024).strip()
-        keepRunning = True
-        numEmptyCommand = 0
 
-        while (keepRunning and numEmptyCommand < 100):
+    def process(self, message):
+        output = "You said: " + message + "\n"
+        sock.sendall(output)
+
+class Server(object):
+    def __init__(self, port=12500):
+        # initialise instance variables
+        self.numclients = 0 # track number of clients
+        self.usermap = {} # map sockets to user objects
+        self.outputs = [] # list of output sockets
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server.bind(('localhost', port))
+
+        self.server.listen(20) # maximum connection backlog of 20
+        #signal.signal(signal.SIGINT, self.finish())
+
+    def finish(self):
+        # shutdown the server
+        print ("Shutting down")
+        for o in self.outputs:
+            o.close()
+        self.server.close()
+
+    def serve(self):
+        inputs = [self.server, sys.stdin]
+        running = True
+
+        while (running):
             try:
-                if (not self.loggedIn):
-                    self.loggedIn = authenticate(self)
-                else:
-                    output = ' '
-                    command = str(recvMessage(self), "utf-8")
-
-                    # command validation
-                    if len(command) == 0:
-                        numEmptyCommand += 1
-                        continue
-
-                    if (command == "logout"):
-                        keepRunning = False
-                        output = "Goodbye!"
-
-                    elif (command == "hello"):
-                        output = "Hello there!"
-                    sendMessage(self, output)
+                inputready, outputready, exceptready = select.select(inputs, self.outputs, [])
             except Exception as err:
-                dPrint("Exception occurred. Closing connection")
+                print ("An error has occurred")
+                print (err)
                 break
 
-def authenticate(self):
-    sendMessage(self, "Welcome! \nPlease enter your username: ")
-    user = str(recvMessage(self), "utf-8").rstrip()
-    sendMessage(self, "Please enter your password: ")
-    password = str(recvMessage(self), "utf-8").rstrip()
+            for sock in inputready:
+                if (sock == self.server):
+                    clientsocket, address = self.server.accept()
+                    self.numclients += 1
+                    newuser = User("Test User", address, clientsocket, self)
+                    self.usermap[clientsocket] = newuser
+                    newuser.process("Hello")
+                    self.outputs.append(client)
 
-    # credential format = <user> <password>
-    try:
-        with open ("credentials.txt") as f:
-            for line in f:
-                credential = line.split(" ")
-                if user == credential[0].rstrip():
-                    if password == credential[1].rstrip():
-                        sendMessage(self, "Congrats. You have logged in!")
-                        return True
+                if (sock == sys.stdin):
+                    pass
+                else:
+                    try:
+                        message = receiveText(sock)
+                        if (message):
+                            user = self.usermap[sock]
+                            user.process(message)
+                        else:
+                            user = self.usermap[sock]
+                            print ("User + " + user.name + " has logged out")
+                            self.numclients -= 1
+                            inputs.remove(sock)
+                            self.outputs.remove(sock)
+                    except Exception as err:
+                        inputs.remove(sock)
+                        self.outputs.remove(sock)
 
-    except Exception as err:
-        sendMessage(self, "Internal Server Error")
-        dPrint("An exception has occurred")
-        dPrint(err)
+        self.server.close()
 
-    sendMessage(self, "Invalid username or password\n")
-    return False
+    def receiveText(self, sock):
+        try:
+            message = str(sock.recv(2048), "utf-8").rstrip()
+        except:
+            message = None
+        return message
 
-def recvMessage(self):
-    return self.request.recv(1024).strip()
-def sendMessage(self, message):
-    self.request.sendall(message.encode('utf-8'))
 
-# Debug print - only print if debug enabled
-def dPrint(message):
-    if debug == True:
-        print(message)
 
-# main function
 if __name__ == "__main__":
     if (len(sys.argv[1:]) >= 3):
         args = sys.argv[1:]
-        global debug # global debugging variable
+        global debug
         debug = False
 
-        # arg order: server port, block duration, timeout
         try:
             port = int(args[0])
-            blockDuration = int(args[1])
+            blockduration = int(args[1])
             timeout = int(args[2])
 
             if (len(args) > 3):
-                if args[3] == "-d":
+                if args[3] == '-d':
                     debug = True
-                    dPrint ("Debugging enabled")
-                    dPrint ("Port = %d, Block duration = %d, Timeout = %d"
-                            % (port, blockDuration, timeout))
-            dPrint("Hello World!")
-            host = "localhost"
-            server = socketserver.TCPServer((host, port), TCPHandler)
-            server.serve_forever()
-
+            Server(port).serve()
         except Exception as err:
-            print ("Error parsing arguments")
-            print (err)
-    else:
-        print ("Usage: ./server.py server_port block_duration timeout [-d]")
+            print(err)
 
+    else:
+        print ("Usage: python3 server.py server_port block_duration timeout [-d]")
 
