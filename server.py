@@ -25,9 +25,32 @@ class User(object):
         self.host = host
         self.sock = sock
 
+        self.blockList = []
         self.loggedIn = False
         self.username = None
         self.password = None
+
+    def block(self, username):
+        if (username == self.name):
+            return "You cannot block yourself!"
+        elif (username in self.blockList):
+            return username + " has already been blocked."
+        else:
+            self.blockList.append(username)
+            return username + " has been blocked."
+
+    def unblock(self, username):
+        if (username not in self.blockList):
+            return username + " is already unblocked."
+        else:
+            self.blockList.remove(username)
+            return username + " has been unblocked."
+
+    def isBlocking(self, username):
+        if (username in self.blockList):
+            return True
+        else:
+            return False
 
     def authenticate(self, message=None):
         output = 'null'
@@ -163,10 +186,18 @@ def serve(port, timeout, blockduration):
     welcomesocket.close()
 
 def broadcast (sourcesocket, message):
+    sourceuser = usermap[sourcesocket]
     for socket in socketlist:
         if socket != welcomesocket and socket != sourcesocket:
             try:
-                socket.send(bytes(message, 'utf-8'))
+                # if source socket and target sockets are linked to users
+                # only send message if target user is not blocking source user
+                if usermap[socket] and sourceuser:
+                    user = usermap[socket]
+                    if not user.isBlocking(sourceuser.name)
+                        socket.send(bytes(message, 'utf-8'))
+                else:
+                    socket.send(bytes(message, 'utf-8'))
             except Exception as err:
                 print (err)
                 socket.close()
