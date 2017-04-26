@@ -8,86 +8,60 @@ import socket
 import sys
 import signal
 
+
+
+usermap = {}
+socketlist = []
+
 class User(object):
-    def __init__(self, name, host, sock, server):
-        self.name = name
+    def __init__(self, host, sock):
+        self.name = ''
         self.host = host
         self.sock = sock
-        self.server = server
-        self.loggedIn = False
 
-    def process(self, message):
-        output = "You said: " + message + "\n"
+        self.loggedIn = False
+        self.username = None
+        self.password = None
+
+    def authenticate(self, message=None):
+        output = 'null'
+        if not message:
+            output = "Please enter your username"
+
+        elif not self.username and not self.password:
+            self.username = message
+            output = "Please enter your password"
+        elif not self.password:
+            self.password = message
+            with open("credentials.txt") as f:
+                for line in f:
+                    credential = line.split(" ")
+
+                    if (self.username == credential[0].rstrip()) and (self.password == credential[1].rstrip()):
+
+                        self.loggedIn = True
+                        self.name = self.username
+                        output = "You have logged in!"
+            if (not self.loggedIn):
+                output = "Incorrect username or password"
+                self.username = None
+                self.password = None
+        else:
+            output = "Incorrect username or password. Please try again."
+            self.username = None
+            self.password = None
         self.sock.sendall(bytes(output, 'utf-8'))
 
-class Server(object):
-    def __init__(self, port=12500):
-        # initialise instance variables
-        self.numclients = 0 # track number of clients
-        self.usermap = {} # map sockets to user objects
-        self.outputs = [] # list of output sockets
-        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server.bind(('localhost', port))
 
-        self.server.listen(20) # maximum connection backlog of 20
-        #signal.signal(signal.SIGINT, self.finish())
-    def serve(self):
-        inputs = [self.server, sys.stdin]
-        running = True
+    def process(self, message=None):
+        #output = "You said: " + message + "\n"
+        #self.sock.sendall(bytes(output, 'utf-8'))
+        if (not self.loggedIn):
+            self.authenticate(message)
+        else:
+            output = "You said: " + message + "\n"
+            self.sock.sendall(bytes(output, 'utf-8'))
 
-        while (running):
-            try:
-                inputready, outputready, exceptready = select.select(inputs, self.outputs, [])
-            except Exception as err:
-                print ("An error has occurred")
-                print (err)
-                break
-
-            for sock in inputready:
-                if (sock == self.server):
-                    clientsocket, address = self.server.accept()
-                    self.numclients += 1
-                    newuser = User("Test User", address, clientsocket, self)
-                    self.usermap[clientsocket] = newuser
-
-                    newuser.process("Hello")
-                    self.outputs.append(sock)
-                    inputs.append(clientsocket)
-
-                if (sock == sys.stdin):
-                    pass
-                else:
-                    try:
-                        message = self.receiveText(sock)
-                        if (message):
-                            user = self.usermap[sock]
-                            user.process(message)
-                        else:
-                            user = self.usermap[sock]
-                            print ("User " + user.name + " has logged out")
-                            self.numclients -= 1
-                            if sock in inputs:
-                                inputs.remove(sock)
-                            if sock in self.outputs:
-                                self.outputs.remove(sock)
-                    except Exception as err:
-                        self.numclients -= 1
-                        if sock in inputs:
-                            inputs.remove(sock)
-                        if sock in self.outputs:
-                            self.outputs.remove(sock)
-
-        self.server.close()
-
-    def receiveText(self, sock):
-        try:
-            message = str(sock.recv(2048), "utf-8").rstrip()
-        except:
-            message = None
-        return message
-
-socketlist = []
 def serve(port, timeout, blockduration):
     welcomesocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     welcomesocket.bind(('localhost', port))
@@ -106,14 +80,18 @@ def serve(port, timeout, blockduration):
                 socketlist.append(clientsocket)
                 print ("Client connected:", address)
                 clientsocket.send(bytes("Hello!", 'utf-8'))
+                newUser = User(address, clientsocket)
+                usermap[clientsocket] = newUser
+                usermap[clientsocket].process()
 
-                broadcast(welcomesocket, clientsocket, "User " + str(address) + " has logged in")
+                #broadcast(welcomesocket, clientsocket, "User " + str(address) + " has logged in")
 
             else:
                 try:
                     data = sock.recv(2048)
                     if data:
-                        broadcast(welcomesocket, sock, "\r" + str(sock.getpeername()) + ": " + str(data, 'utf-8'))
+                        #broadcast(welcomesocket, sock, "\r" + str(sock.getpeername()) + ": " + str(data, 'utf-8'))
+                        usermap[sock].process(str(data, 'utf-8').rstrip())
                     else:
                         if sock in socketlist:
                             socketlist.remove(sock)
