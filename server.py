@@ -41,17 +41,25 @@ class User(object):
 
                         self.loggedIn = True
                         self.name = self.username
-                        output = "You have logged in!"
+                        output = "You have logged in as " + self.name
             if (not self.loggedIn):
                 output = "Incorrect username or password"
                 self.username = None
                 self.password = None
+                self.authenticate() # restart authentication procedure
         else:
             output = "Incorrect username or password. Please try again."
             self.username = None
             self.password = None
+            self.authenticate()
         self.sock.sendall(bytes(output, 'utf-8'))
 
+    def logout(self):
+        usermap[self.sock] = None
+        socketlist.remove(self.sock)
+        self.loggedIn = False
+        self.sock.close()
+        self.sock = None
 
     def process(self, message=None):
         #output = "You said: " + message + "\n"
@@ -59,8 +67,23 @@ class User(object):
         if (not self.loggedIn):
             self.authenticate(message)
         else:
-            output = "You said: " + message + "\n"
-            self.sock.sendall(bytes(output, 'utf-8'))
+            #output = "You said: " + message + "\n"
+            output = "null"
+            if (message == "logout"):
+                output = "Goodbye!"
+                self.sock.sendall(bytes(output, 'utf-8'))
+                self.logout()
+
+            if (message == "help"):
+                output = "== Available Commands ==\n"
+                output += "logout - logs you out of the server\n"
+                output += "broadcast - send a message to all current online users\n"
+            else:
+                output = "Invalid command. Type 'help' for list of available commands"
+
+            # send output
+            if self.sock:
+                self.sock.sendall(bytes(output, 'utf-8'))
 
 def serve(port, timeout, blockduration):
     welcomesocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -79,7 +102,7 @@ def serve(port, timeout, blockduration):
                 clientsocket, address = welcomesocket.accept()
                 socketlist.append(clientsocket)
                 print ("Client connected:", address)
-                clientsocket.send(bytes("Hello!", 'utf-8'))
+                clientsocket.sendall(bytes("Hello! ", 'utf-8'))
                 newUser = User(address, clientsocket)
                 usermap[clientsocket] = newUser
                 usermap[clientsocket].process()

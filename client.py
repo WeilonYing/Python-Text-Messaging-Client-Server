@@ -28,17 +28,18 @@ def connect (host, port):
                         # we have incoming message
                         message = sock.recv(2048)
                         if not message:
-                            print ("Disconnected from server")
+                            print ("\nDisconnected from server")
                             sys.exit(0)
                         else:
                             message = str(message, "utf-8").rstrip()
                             print (message)
+                            print (" > ", end="", flush=True)
                     else:
                         # we have a message to send out
                         message = sys.stdin.readline()
                         if len(message) > 0:
                             sock.send(bytes(message, "utf-8"))
-                            print ("Sent " + message)
+                            #print ("Sent " + message)
         except KeyboardInterrupt:
             print ("Closing connection")
             sock.close()
