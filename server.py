@@ -1,18 +1,24 @@
 # COMP3331 Assignment
 # Server
 # Weilon Ying (z5059444)
-# Written with some assistance from code.activestate.com/recipes/531824-chat-server-client-using-selectselect/
+# Credits: Written with some assistance from code.activestate.com/recipes/531824-chat-server-client-using-selectselect/
 
 import select
 import socket
 import sys
 import signal
 
+from datetime import datetime, timedelta
 
 
+# Global current online users and connected sockets list
 usermap = {}
 socketlist = []
 
+# Global dictionary to store users' last login times since server start
+loginhistory = {}
+
+# User object. Has user-specfic functions and attributes.
 class User(object):
     def __init__(self, host, sock):
         self.name = ''
@@ -42,20 +48,24 @@ class User(object):
                         self.loggedIn = True
                         self.name = self.username
                         output = "You have logged in as " + self.name
+                        broadcast(self.sock, "\r" + self.name + " has logged in")
+
+                        loginhistory[self.name] = datetime.now()
             if (not self.loggedIn):
-                output = "Incorrect username or password"
+                output = "Incorrect username or password\n"
+                output += "Please enter your username"
                 self.username = None
                 self.password = None
-                self.authenticate() # restart authentication procedure
         else:
             output = "Incorrect username or password. Please try again."
+            output += "Please enter your username"
             self.username = None
             self.password = None
-            self.authenticate()
         self.sock.sendall(bytes(output, 'utf-8'))
 
     def logout(self):
         usermap[self.sock] = None
+        broadcast(self.sock, "\r" + self.name + " has logged out")
         socketlist.remove(self.sock)
         self.loggedIn = False
         self.sock.close()
@@ -69,15 +79,37 @@ class User(object):
         else:
             #output = "You said: " + message + "\n"
             output = "null"
-            if (message == "logout"):
+
+            try:
+                command, parameter = message.split(" ", maxsplit=1)
+            except ValueError:
+                command = message
+                parameter = None
+
+
+            if (command == "logout"):
                 output = "Goodbye!"
                 self.sock.sendall(bytes(output, 'utf-8'))
                 self.logout()
 
-            if (message == "help"):
+            elif (command == "whoelse"):
+                output = getOnlineUsers(self.sock)
+
+            elif (command == "whoelsesince"):
+                if parameter:
+                    try:
+                        output = getUsersSince(self.sock, int(parameter))
+                    except ValueError:
+                        output = "Invalid parameter. Time parameter must be an integer."
+                else:
+                    output = "Usage: whoelsesince <time>"
+
+            elif (command == "help"):
                 output = "== Available Commands ==\n"
                 output += "logout - logs you out of the server\n"
                 output += "broadcast - send a message to all current online users\n"
+                output += "whoelse - see all currently online users\n"
+                output += "whoelsesince <time> - see all users who have logged in since <time> seconds ago\n"
             else:
                 output = "Invalid command. Type 'help' for list of available commands"
 
@@ -86,6 +118,7 @@ class User(object):
                 self.sock.sendall(bytes(output, 'utf-8'))
 
 def serve(port, timeout, blockduration):
+    global welcomesocket
     welcomesocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     welcomesocket.bind(('localhost', port))
     welcomesocket.listen(20)
@@ -101,32 +134,37 @@ def serve(port, timeout, blockduration):
             if sock == welcomesocket:
                 clientsocket, address = welcomesocket.accept()
                 socketlist.append(clientsocket)
-                print ("Client connected:", address)
                 clientsocket.sendall(bytes("Hello! ", 'utf-8'))
                 newUser = User(address, clientsocket)
                 usermap[clientsocket] = newUser
                 usermap[clientsocket].process()
 
-                #broadcast(welcomesocket, clientsocket, "User " + str(address) + " has logged in")
-
             else:
                 try:
                     data = sock.recv(2048)
                     if data:
-                        #broadcast(welcomesocket, sock, "\r" + str(sock.getpeername()) + ": " + str(data, 'utf-8'))
                         usermap[sock].process(str(data, 'utf-8').rstrip())
                     else:
                         if sock in socketlist:
                             socketlist.remove(sock)
-                        broadcast(welcomesocket, sock, "\r" + str(address) + " has logged out")
+                        if sock in usermap:
+                            user = usermap[sock]
+                            broadcast(sock, "\r" + user.name + " has logged out")
+                            usermap[sock] = None
                 except:
-                    broadcast(welcomesocket, sock, "\r" + str(address) + " has logged out")
-                    continue
+                    if sock in socketlist:
+                        socketlist.remove(sock)
+                    if sock in usermap:
+                        user = usermap[sock]
+                        broadcast(sock, "\r" + user.name + " has logged out")
+                        usermap[sock] = None
+
+
     welcomesocket.close()
 
-def broadcast (serversocket, sock, message):
+def broadcast (sourcesocket, message):
     for socket in socketlist:
-        if socket != serversocket:
+        if socket != welcomesocket and socket != sourcesocket:
             try:
                 socket.send(bytes(message, 'utf-8'))
             except Exception as err:
@@ -135,7 +173,38 @@ def broadcast (serversocket, sock, message):
                 if socket in socketlist:
                     socketlist.remove(socket)
 
+def getOnlineUsers (sourcesocket):
+    output = ""
+    for sock in usermap:
+        if sock != sourcesocket:
+            user = usermap[sock]
+            if user:
+                output += user.name + "\n"
+    if len(output) == 0:
+        output = "No other users online.\n"
+    else:
+        output = "== Currently Online ==\n" + output
+    return output
 
+def getUsersSince (sourcesocket, sec):
+    currentuser = usermap[sourcesocket].name
+    output = ''
+    now = datetime.now()
+    timesince = now - timedelta(seconds=sec)
+    for username in loginhistory:
+        if username != currentuser:
+            if loginhistory[username] > timesince:
+                difference = (now - loginhistory[username]).total_seconds()
+                difference = int(difference)
+                output += username + " - " + str(difference) + " seconds ago\n"
+
+    if len(output) == 0:
+        output = "No other users online since " + str(sec) + " seconds ago.\n"
+    else:
+        header = "== Users logged since %s seconds ago ==\n" % (sec)
+        output = header + output
+
+    return output
 
 if __name__ == "__main__":
     if (len(sys.argv[1:]) >= 3):
@@ -143,7 +212,7 @@ if __name__ == "__main__":
         global debug
         debug = False
 
-        #try:
+
         port = int(args[0])
         blockduration = int(args[1])
         timeout = int(args[2])
@@ -152,11 +221,7 @@ if __name__ == "__main__":
             if args[3] == '-d':
                 debug = True
         serve(port, timeout, blockduration)
-        #server = Server(port)
-        #server.serve()
-        #except Exception as err:
-        #    print("Error has occurred in main")
-        #    print(err)
+
 
     else:
         print ("Usage: python3 server.py server_port block_duration timeout [-d]")
