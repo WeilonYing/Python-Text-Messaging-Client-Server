@@ -6,23 +6,8 @@
 import os
 import socket
 import sys
-import _thread
+import select
 
-
-
-# Receive messages from messenging server
-def receive (sock):
-    while (True):
-        received = str(sock.recv(1024), "utf-8")
-        if (len(received) == 0):
-            sock.close()
-            break
-
-        print (received)
-        if (received == "Goodbye!"):
-            sock.close()
-            break
-    os._exit(0) #exit all threads once we stop receiving
 
 # Establish connection with message server and send commands
 def connect (host, port):
@@ -32,19 +17,35 @@ def connect (host, port):
         sock.connect((host, port))
         # received = str(sock.recv(1024), "utf-8")
         # print (received)
-        _thread.start_new_thread(receive, (sock,))
-        while (True):
-            data = input()
-            if (len(data) > 0):
+        try:
+            while (True):
+                socket_list = [sys.stdin, sock]
 
-                sock.sendall(bytes(data + "\n", "utf-8"))
+                inputready, outputready, exceptready = select.select(socket_list, [], [])
 
-                # Receive data from the server and shut down
-                # received = str(sock.recv(1024), "utf-8")
-                # print (received)
-                #if (received == "Goodbye!"):
-                #    sock.close()
-                #    break
+                for s in inputready:
+                    if s == sock:
+                        # we have incoming message
+                        message = sock.recv(2048)
+                        if not message:
+                            print ("Disconnected from server")
+                            sys.exit(0)
+                        else:
+                            message = str(message, "utf-8").rstrip()
+                            print (message)
+                    else:
+                        # we have a message to send out
+                        message = sys.stdin.readline()
+                        if len(message) > 0:
+                            sock.send(bytes(message, "utf-8"))
+                            print ("Sent " + message)
+        except KeyboardInterrupt:
+            print ("Closing connection")
+            sock.close()
+        except Exception as err:
+            print ("An error has occurred")
+            print (err)
+            sock.close()
 
 if (len(sys.argv[1:]) >= 2):
     try:

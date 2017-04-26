@@ -18,7 +18,7 @@ class User(object):
 
     def process(self, message):
         output = "You said: " + message + "\n"
-        sock.sendall(output)
+        self.sock.sendall(bytes(output, 'utf-8'))
 
 class Server(object):
     def __init__(self, port=12500):
@@ -32,14 +32,6 @@ class Server(object):
 
         self.server.listen(20) # maximum connection backlog of 20
         #signal.signal(signal.SIGINT, self.finish())
-
-    def finish(self):
-        # shutdown the server
-        print ("Shutting down")
-        for o in self.outputs:
-            o.close()
-        self.server.close()
-
     def serve(self):
         inputs = [self.server, sys.stdin]
         running = True
@@ -58,26 +50,33 @@ class Server(object):
                     self.numclients += 1
                     newuser = User("Test User", address, clientsocket, self)
                     self.usermap[clientsocket] = newuser
+
                     newuser.process("Hello")
-                    self.outputs.append(client)
+                    self.outputs.append(sock)
+                    inputs.append(clientsocket)
 
                 if (sock == sys.stdin):
                     pass
                 else:
                     try:
-                        message = receiveText(sock)
+                        message = self.receiveText(sock)
                         if (message):
                             user = self.usermap[sock]
                             user.process(message)
                         else:
                             user = self.usermap[sock]
-                            print ("User + " + user.name + " has logged out")
+                            print ("User " + user.name + " has logged out")
                             self.numclients -= 1
-                            inputs.remove(sock)
-                            self.outputs.remove(sock)
+                            if sock in inputs:
+                                inputs.remove(sock)
+                            if sock in self.outputs:
+                                self.outputs.remove(sock)
                     except Exception as err:
-                        inputs.remove(sock)
-                        self.outputs.remove(sock)
+                        self.numclients -= 1
+                        if sock in inputs:
+                            inputs.remove(sock)
+                        if sock in self.outputs:
+                            self.outputs.remove(sock)
 
         self.server.close()
 
@@ -88,6 +87,53 @@ class Server(object):
             message = None
         return message
 
+socketlist = []
+def serve(port, timeout, blockduration):
+    welcomesocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    welcomesocket.bind(('localhost', port))
+    welcomesocket.listen(20)
+
+    socketlist.append(welcomesocket)
+
+    print ("Server started")
+
+    while True:
+        readready, writeready, exceptionready = select.select(socketlist, [], [], timeout)
+
+        for sock in readready:
+            if sock == welcomesocket:
+                clientsocket, address = welcomesocket.accept()
+                socketlist.append(clientsocket)
+                print ("Client connected:", address)
+                clientsocket.send(bytes("Hello!", 'utf-8'))
+
+                broadcast(welcomesocket, clientsocket, "User " + str(address) + " has logged in")
+
+            else:
+                try:
+                    data = sock.recv(2048)
+                    if data:
+                        broadcast(welcomesocket, sock, "\r" + str(sock.getpeername()) + ": " + str(data, 'utf-8'))
+                    else:
+                        if sock in socketlist:
+                            socketlist.remove(sock)
+                        broadcast(welcomesocket, sock, "\r" + str(address) + " has logged out")
+                except:
+                    broadcast(welcomesocket, sock, "\r" + str(address) + " has logged out")
+                    continue
+    welcomesocket.close()
+
+def broadcast (serversocket, sock, message):
+    for socket in socketlist:
+        if socket != serversocket:
+            try:
+                socket.send(bytes(message, 'utf-8'))
+            except Exception as err:
+                print (err)
+                socket.close()
+                if socket in socketlist:
+                    socketlist.remove(socket)
+
 
 
 if __name__ == "__main__":
@@ -96,17 +142,20 @@ if __name__ == "__main__":
         global debug
         debug = False
 
-        try:
-            port = int(args[0])
-            blockduration = int(args[1])
-            timeout = int(args[2])
+        #try:
+        port = int(args[0])
+        blockduration = int(args[1])
+        timeout = int(args[2])
 
-            if (len(args) > 3):
-                if args[3] == '-d':
-                    debug = True
-            Server(port).serve()
-        except Exception as err:
-            print(err)
+        if (len(args) > 3):
+            if args[3] == '-d':
+                debug = True
+        serve(port, timeout, blockduration)
+        #server = Server(port)
+        #server.serve()
+        #except Exception as err:
+        #    print("Error has occurred in main")
+        #    print(err)
 
     else:
         print ("Usage: python3 server.py server_port block_duration timeout [-d]")
