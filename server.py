@@ -116,7 +116,7 @@ class User(object):
                         self.loggedIn = True
                         self.name = self.username
                         output = "You have logged in as " + self.name
-                        broadcast(self.sock, "\r" + self.name + " has logged in")
+                        broadcast(self.sock, self.name + " has logged in")
 
                         loginhistory[self.name] = datetime.now()
                         self.sock.sendall(bytes(output, 'utf-8'))
@@ -149,7 +149,7 @@ class User(object):
 
     def logout(self):
         loginhistory[self.name] = datetime.now()
-        broadcast(self.sock, "\r" + self.name + " has logged out")
+        broadcast(self.sock, self.name + " has logged out")
         usermap[self.sock] = None
         socketlist.remove(self.sock)
         self.loggedIn = False
@@ -188,12 +188,18 @@ class User(object):
                             result = sendmessage(self.sock, target, content)
                             if (result == SUCCESS):
                                 output = "[me -> " + target + "]: " + content
+                                now = datetime.now()
+                                nowstr = "[" + now.strftime("%Y-%m-%d %H:%M:%S") + "]"
+                                output = nowstr + output
                             elif (result == BLOCKED):
                                 output = target + " has blocked you. You cannot send messages to them."
                             elif (result == OFFLINE):
                                 output = target + " is offline. They will receive the message when they next log in."
                             else:
                                 output = "[me -> " + target + "]: " + content + "(" + result + ")"
+                                now = datetime.now()
+                                nowstr = "[" + now.strftime("%Y-%m-%d %H:%M:%S") + "]"
+                                output = nowstr + output
                         else:
                             output = "You cannot send messages to yourself."
                     except Exception as err:
@@ -204,7 +210,7 @@ class User(object):
             elif (command == "broadcast"):
                 if parameter:
                     try:
-                        broadcastMessage = "\r[Broadcast] " + self.name + ": " + parameter
+                        broadcastMessage = "[Broadcast] " + self.name + ": " + parameter
                         sentToAll = broadcast(self.sock, broadcastMessage)
                         if sentToAll:
                             output = "Broadcast message sent"
@@ -299,7 +305,7 @@ def serve(port, timeout, blockduration):
                         if sock in usermap:
                             user = usermap[sock]
                             loginhistory[user.name] = datetime.now()
-                            broadcast(sock, "\r" + user.name + " has logged out")
+                            broadcast(sock, user.name + " has logged out")
                             usermap[sock] = None
                 except:
                     if sock in socketlist:
@@ -307,7 +313,7 @@ def serve(port, timeout, blockduration):
                     if sock in usermap:
                         user = usermap[sock]
                         loginhistory[user.name] = datetime.now()
-                        broadcast(sock, "\r" + user.name + " has logged out")
+                        broadcast(sock, user.name + " has logged out")
                         usermap[sock] = None
 
 
@@ -315,6 +321,11 @@ def serve(port, timeout, blockduration):
 
 def sendmessage (sourcesocket, targetuser, message):
     sourceuser = usermap[sourcesocket]
+
+    now = datetime.now()
+    nowstr = "[" + now.strftime("%Y-%m-%d %H:%M:%S") + "] "
+    message = nowstr + message
+
     if targetuser in blocklists:
         blocklist = blocklists[targetuser]
         if sourceuser.name in blocklist:
@@ -335,16 +346,17 @@ def offlineMessage(targetuser, message):
     if targetuser not in offlineMessages:
         offlineMessages[targetuser] = []
 
-    now = datetime.now()
-    nowstr = "[" + now.strftime("%Y-%m-%d %H:%M:%S") + "]"
-    message = nowstr + message
-
     offlineMessages[targetuser].append(message)
     print (offlineMessages)
 
 
 def broadcast (sourcesocket, message):
     sentToAll = True
+
+    now = datetime.now()
+    nowstr = "[" + now.strftime("%Y-%m-%d %H:%M:%S") + "] "
+    message = "\r" + nowstr + message
+
     sourceuser = usermap[sourcesocket]
     for sock in socketlist:
         if sock != welcomesocket and sock != sourcesocket:
