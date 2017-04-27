@@ -46,6 +46,18 @@ class User(object):
             self.blockList.remove(username)
             return username + " has been unblocked."
 
+    def getBlockList(self):
+        if len(self.blockList) == 0:
+            return "You are not blocking anyone."
+        else:
+            output = ''
+            for username in self.blockList:
+                output += username + "\n"
+            header = "== Users you have blocked ==\n"
+            output = header + output
+
+            return output
+
     def isBlocking(self, username):
         if (username in self.blockList):
             return True
@@ -87,8 +99,9 @@ class User(object):
         self.sock.sendall(bytes(output, 'utf-8'))
 
     def logout(self):
-        usermap[self.sock] = None
+        loginhistory[self.name] = datetime.now()
         broadcast(self.sock, "\r" + self.name + " has logged out")
+        usermap[self.sock] = None
         socketlist.remove(self.sock)
         self.loggedIn = False
         self.sock.close()
@@ -127,12 +140,36 @@ class User(object):
                 else:
                     output = "Usage: whoelsesince <time>"
 
+            elif (command == "block"):
+                if parameter:
+                    try:
+                        output = self.block(parameter)
+                    except Exception as err:
+                        output = "Invalid parameter. Usage: block <user to block>"
+                else:
+                    output = "Usage: block <user to block>"
+
+            elif (command == "unblock"):
+                if parameter:
+                    try:
+                        output = self.unblock(parameter)
+                    except Exception as err:
+                        output = "Invalid parameter. Uage: unblock <user to unblock>"
+                else:
+                    output = "Usage: unblock <user to unblock>"
+
+            elif (command == "blocklist"):
+                output = self.getBlockList()
+
             elif (command == "help"):
                 output = "== Available Commands ==\n"
                 output += "logout - logs you out of the server\n"
                 output += "broadcast - send a message to all current online users\n"
                 output += "whoelse - see all currently online users\n"
                 output += "whoelsesince <time> - see all users who have logged in since <time> seconds ago\n"
+                output += "block <user to block> - block a user from sending messages to you\n"
+                output += "unblock <user to unblock> - unblock a user\n"
+                output += "blocklist - get a list of users that you've blocked\n"
             else:
                 output = "Invalid command. Type 'help' for list of available commands"
 
@@ -172,6 +209,7 @@ def serve(port, timeout, blockduration):
                             socketlist.remove(sock)
                         if sock in usermap:
                             user = usermap[sock]
+                            loginhistory[user.name] = datetime.now()
                             broadcast(sock, "\r" + user.name + " has logged out")
                             usermap[sock] = None
                 except:
@@ -179,6 +217,7 @@ def serve(port, timeout, blockduration):
                         socketlist.remove(sock)
                     if sock in usermap:
                         user = usermap[sock]
+                        loginhistory[user.name] = datetime.now()
                         broadcast(sock, "\r" + user.name + " has logged out")
                         usermap[sock] = None
 
@@ -194,7 +233,7 @@ def broadcast (sourcesocket, message):
                 # only send message if target user is not blocking source user
                 if usermap[socket] and sourceuser:
                     user = usermap[socket]
-                    if not user.isBlocking(sourceuser.name)
+                    if not user.isBlocking(sourceuser.name):
                         socket.send(bytes(message, 'utf-8'))
                 else:
                     socket.send(bytes(message, 'utf-8'))
@@ -222,8 +261,16 @@ def getUsersSince (sourcesocket, sec):
     output = ''
     now = datetime.now()
     timesince = now - timedelta(seconds=sec)
+
+    onlineUserList = []
+    for sock in usermap:
+        user = usermap[sock]
+        if user and user.name != currentuser:
+            onlineUserList.append(user.name)
+            output += user.name + " - online now\n"
+
     for username in loginhistory:
-        if username != currentuser:
+        if username != currentuser and username not in onlineUserList:
             if loginhistory[username] > timesince:
                 difference = (now - loginhistory[username]).total_seconds()
                 difference = int(difference)
