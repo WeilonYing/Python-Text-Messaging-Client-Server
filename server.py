@@ -275,15 +275,11 @@ def broadcast (sourcesocket, message):
                 # if source socket and target sockets are linked to users
                 # only send message if target user is not blocking source user
                 if usermap[socket] and sourceuser:
-                    print("a")
                     user = usermap[socket]
-                    if user in blocklists:
-                        print("b")
+                    if user.name in blocklists:
                         if user.isBlocking(sourceuser.name):
-                            print("c")
                             sentToAll = False
                         else:
-                            print("d")
                             socket.send(bytes(message, 'utf-8'))
                     else:
                         socket.send(bytes(message, 'utf-8'))
