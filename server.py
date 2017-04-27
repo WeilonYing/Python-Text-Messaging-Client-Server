@@ -3,10 +3,13 @@
 # Weilon Ying (z5059444)
 # Credits: Written with some assistance from code.activestate.com/recipes/531824-chat-server-client-using-selectselect/
 
+import os
 import select
 import socket
 import sys
 import signal
+import threading
+import time
 import traceback
 
 from datetime import datetime, timedelta
@@ -30,6 +33,8 @@ SUCCESS = 0
 BLOCKED = 1
 OFFLINE = 2
 
+# Global timeout variable
+timeout = 300 # default value 300
 
 # User object. Has user-specfic functions and attributes.
 class User(object):
@@ -41,6 +46,7 @@ class User(object):
         self.loggedIn = False
         self.username = None
         self.password = None
+        self.lastReceived = datetime.now() # stores last time we heard from this user
         self.initBlocklistIfNotExists()
 
     def initBlocklistIfNotExists(self):
@@ -64,7 +70,8 @@ class User(object):
         self.initBlocklistIfNotExists()
 
         blocklist = blocklists[self.name]
-
+        if (username == self.name):
+            return "You cannot unblock yourself!"
         if (username not in blocklist):
             return username + " is already unblocked."
         else:
@@ -157,8 +164,8 @@ class User(object):
         self.sock = None
 
     def process(self, message=None):
-        #output = "You said: " + message + "\n"
-        #self.sock.sendall(bytes(output, 'utf-8'))
+        self.lastReceived = datetime.now()
+
         if (not self.loggedIn):
             self.authenticate(message)
         else:
@@ -272,7 +279,7 @@ class User(object):
             if self.sock:
                 self.sock.sendall(bytes(output, 'utf-8'))
 
-def serve(port, timeout, blockduration):
+def serve(port, blockduration):
     global welcomesocket
     welcomesocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     welcomesocket.bind(('localhost', port))
@@ -282,24 +289,35 @@ def serve(port, timeout, blockduration):
 
     print ("Server started")
 
-    while True:
-        readready, writeready, exceptionready = select.select(socketlist, [], [], timeout)
+    try:
+        checktimeout()
 
-        for sock in readready:
-            if sock == welcomesocket:
-                clientsocket, address = welcomesocket.accept()
-                socketlist.append(clientsocket)
-                clientsocket.sendall(bytes("Hello! ", 'utf-8'))
-                newUser = User(address, clientsocket)
-                usermap[clientsocket] = newUser
-                usermap[clientsocket].process()
+        while True:
+            readready, writeready, exceptionready = select.select(socketlist, [], [])
 
-            else:
-                try:
-                    data = sock.recv(2048)
-                    if data:
-                        usermap[sock].process(str(data, 'utf-8').rstrip())
-                    else:
+            for sock in readready:
+                if sock == welcomesocket:
+                    clientsocket, address = welcomesocket.accept()
+                    socketlist.append(clientsocket)
+                    clientsocket.sendall(bytes("Hello! ", 'utf-8'))
+                    newUser = User(address, clientsocket)
+                    usermap[clientsocket] = newUser
+                    usermap[clientsocket].process()
+
+                else:
+                    try:
+                        data = sock.recv(2048)
+                        if data:
+                            usermap[sock].process(str(data, 'utf-8').rstrip())
+                        else:
+                            if sock in socketlist:
+                                socketlist.remove(sock)
+                            if sock in usermap:
+                                user = usermap[sock]
+                                loginhistory[user.name] = datetime.now()
+                                broadcast(sock, user.name + " has logged out")
+                                usermap[sock] = None
+                    except:
                         if sock in socketlist:
                             socketlist.remove(sock)
                         if sock in usermap:
@@ -307,17 +325,31 @@ def serve(port, timeout, blockduration):
                             loginhistory[user.name] = datetime.now()
                             broadcast(sock, user.name + " has logged out")
                             usermap[sock] = None
-                except:
-                    if sock in socketlist:
-                        socketlist.remove(sock)
-                    if sock in usermap:
-                        user = usermap[sock]
-                        loginhistory[user.name] = datetime.now()
-                        broadcast(sock, user.name + " has logged out")
-                        usermap[sock] = None
-
+    except KeyboardInterrupt: # close everything
+        for sock in socketlist:
+            sock.close()
+        os._exit(0)
 
     welcomesocket.close()
+
+# check if any of the users have timed out, then reshedules itself to check
+# again after 1 second
+def checktimeout():
+    try:
+        threading.Timer(1.0, checktimeout).start()
+        message = "You have timed out. Logging you out."
+
+        now = datetime.now()
+        for sock in usermap:
+            user = usermap[sock]
+            if user:
+                difference = (now - user.lastReceived).total_seconds()
+                if (difference > timeout):
+                    sock.sendall(bytes("\r" + message, 'utf-8'))
+                    user.logout()
+                    sock.sendall(None)
+    except KeyboardInterrupt:
+        return # simply exit the repetition
 
 def sendmessage (sourcesocket, targetuser, message):
     sourceuser = usermap[sourcesocket]
@@ -336,7 +368,7 @@ def sendmessage (sourcesocket, targetuser, message):
             if sock in usermap:
                 user = usermap[sock]
                 if (user.name == targetuser):
-                    sock.send(bytes("\r" + message, 'utf-8'))
+                    sock.sendall(bytes("\r" + message, 'utf-8'))
                     return SUCCESS
 
     offlineMessage(targetuser, message)
@@ -429,16 +461,14 @@ if __name__ == "__main__":
         global debug
         debug = False
 
-
         port = int(args[0])
         blockduration = int(args[1])
-        timeout = int(args[2])
+        timeout = int(args[2]) # timeout is a global variable
 
         if (len(args) > 3):
             if args[3] == '-d':
                 debug = True
-        serve(port, timeout, blockduration)
-
+        serve(port, blockduration)
 
     else:
         print ("Usage: python3 server.py server_port block_duration timeout [-d]")
