@@ -7,6 +7,7 @@ import select
 import socket
 import sys
 import signal
+import traceback
 
 from datetime import datetime, timedelta
 
@@ -18,6 +19,9 @@ socketlist = []
 # Global dictionary to store users' last login times since server start
 loginhistory = {}
 
+# Global dictionary to store user's blocklists
+blocklists = {}
+
 # User object. Has user-specfic functions and attributes.
 class User(object):
     def __init__(self, host, sock):
@@ -25,33 +29,49 @@ class User(object):
         self.host = host
         self.sock = sock
 
-        self.blockList = []
         self.loggedIn = False
         self.username = None
         self.password = None
+        #self.initBlocklistIfNotExists()
+
+    def initBlocklistIfNotExists(self):
+        if self.name not in blocklists:
+            blocklists[self.name] = []
 
     def block(self, username):
+        self.initBlocklistIfNotExists()
+
+        blocklist = blocklists[self.name]
+
         if (username == self.name):
             return "You cannot block yourself!"
-        elif (username in self.blockList):
+        elif (username in blocklist):
             return username + " has already been blocked."
         else:
-            self.blockList.append(username)
+            blocklist.append(username)
             return username + " has been blocked."
 
     def unblock(self, username):
-        if (username not in self.blockList):
+        self.initBlocklistIfNotExists()
+
+        blocklist = blocklists[self.name]
+
+        if (username not in blocklist):
             return username + " is already unblocked."
         else:
-            self.blockList.remove(username)
+            blocklist.remove(username)
             return username + " has been unblocked."
 
     def getBlockList(self):
-        if len(self.blockList) == 0:
+        self.initBlocklistIfNotExists()
+
+        blocklist = blocklists[self.name]
+
+        if len(blocklist) == 0:
             return "You are not blocking anyone."
         else:
             output = ''
-            for username in self.blockList:
+            for username in blocklist:
                 output += username + "\n"
             header = "== Users you have blocked ==\n"
             output = header + output
@@ -59,7 +79,11 @@ class User(object):
             return output
 
     def isBlocking(self, username):
-        if (username in self.blockList):
+        self.initBlocklistIfNotExists()
+
+        blocklist = blocklists[self.name]
+
+        if (username in blocklist):
             return True
         else:
             return False
@@ -161,7 +185,8 @@ class User(object):
                         output = self.block(parameter)
                     except Exception as err:
                         print(err)
-                        output = "Invalid parameter. Usage: block <user to block>"
+                        output = "Invalid parameter. Usage: block <user to block>\n"
+                        traceback.print_exc()
                 else:
                     output = "Usage: block <user to block>"
 
@@ -180,7 +205,8 @@ class User(object):
             elif (command == "help"):
                 output = "== Available Commands ==\n"
                 output += "logout - logs you out of the server\n"
-                output += "broadcast - send a message to all current online users\n"
+                output += "message <user> <message> - send a message to a specific user\n"
+                output += "broadcast <message> - send a message to all current online users\n"
                 output += "whoelse - see all currently online users\n"
                 output += "whoelsesince <time> - see all users who have logged in since <time> seconds ago\n"
                 output += "block <user to block> - block a user from sending messages to you\n"
@@ -249,9 +275,16 @@ def broadcast (sourcesocket, message):
                 # if source socket and target sockets are linked to users
                 # only send message if target user is not blocking source user
                 if usermap[socket] and sourceuser:
+                    print("a")
                     user = usermap[socket]
-                    if user.isBlocking(sourceuser.name):
-                        sentToAll = False
+                    if user in blocklists:
+                        print("b")
+                        if user.isBlocking(sourceuser.name):
+                            print("c")
+                            sentToAll = False
+                        else:
+                            print("d")
+                            socket.send(bytes(message, 'utf-8'))
                     else:
                         socket.send(bytes(message, 'utf-8'))
                 else:
