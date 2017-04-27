@@ -22,6 +22,15 @@ loginhistory = {}
 # Global dictionary to store user's blocklists
 blocklists = {}
 
+# Offline messages
+offlineMessages = {}
+
+# Status code for user messaging
+SUCCESS = 0
+BLOCKED = 1
+OFFLINE = 2
+
+
 # User object. Has user-specfic functions and attributes.
 class User(object):
     def __init__(self, host, sock):
@@ -32,7 +41,7 @@ class User(object):
         self.loggedIn = False
         self.username = None
         self.password = None
-        #self.initBlocklistIfNotExists()
+        self.initBlocklistIfNotExists()
 
     def initBlocklistIfNotExists(self):
         if self.name not in blocklists:
@@ -110,6 +119,9 @@ class User(object):
                         broadcast(self.sock, "\r" + self.name + " has logged in")
 
                         loginhistory[self.name] = datetime.now()
+                        self.sock.sendall(bytes(output, 'utf-8'))
+                        self.getOfflineMessages()
+                        return
             if (not self.loggedIn):
                 output = "Incorrect username or password\n"
                 output += "Please enter your username"
@@ -121,6 +133,19 @@ class User(object):
             self.username = None
             self.password = None
         self.sock.sendall(bytes(output, 'utf-8'))
+
+    def getOfflineMessages(self):
+        if self.name in offlineMessages:
+            messageList = offlineMessages[self.name]
+            if len(messageList) > 0:
+                header = "\n== You received messages while you were offline ==\n"
+                self.sock.sendall(bytes(header, 'utf-8'))
+
+                for message in messageList:
+                    self.sock.sendall(bytes(message + "\n", 'utf-8'))
+
+        offlineMessages[self.name] = []
+
 
     def logout(self):
         loginhistory[self.name] = datetime.now()
@@ -151,6 +176,30 @@ class User(object):
                 output = "Goodbye!"
                 self.sock.sendall(bytes(output, 'utf-8'))
                 self.logout()
+
+            elif (command == "message"):
+                if parameter:
+                    try:
+                        target, content = parameter.split(" ", maxsplit=1)
+                        prefix = "[" + self.name + " -> me]: "
+                        content = prefix + content
+
+                        if (target != self.name):
+                            result = sendmessage(self.sock, target, content)
+                            if (result == SUCCESS):
+                                output = "[me -> " + target + "]: " + content
+                            elif (result == BLOCKED):
+                                output = target + " has blocked you. You cannot send messages to them."
+                            elif (result == OFFLINE):
+                                output = target + " is offline. They will receive the message when they next log in."
+                            else:
+                                output = "[me -> " + target + "]: " + content + "(" + result + ")"
+                        else:
+                            output = "You cannot send messages to yourself."
+                    except Exception as err:
+                        output = "Invalid parameter. Usage: message <user> <message content>"
+                else:
+                    output = "Usage: message <user> <message content>"
 
             elif (command == "broadcast"):
                 if parameter:
@@ -184,9 +233,7 @@ class User(object):
                     try:
                         output = self.block(parameter)
                     except Exception as err:
-                        print(err)
                         output = "Invalid parameter. Usage: block <user to block>\n"
-                        traceback.print_exc()
                 else:
                     output = "Usage: block <user to block>"
 
@@ -266,30 +313,60 @@ def serve(port, timeout, blockduration):
 
     welcomesocket.close()
 
+def sendmessage (sourcesocket, targetuser, message):
+    sourceuser = usermap[sourcesocket]
+    if targetuser in blocklists:
+        blocklist = blocklists[targetuser]
+        if sourceuser.name in blocklist:
+            return BLOCKED
+
+    for sock in socketlist:
+        if sock != welcomesocket and sock != sourcesocket:
+            if sock in usermap:
+                user = usermap[sock]
+                if (user.name == targetuser):
+                    sock.send(bytes("\r" + message, 'utf-8'))
+                    return SUCCESS
+
+    offlineMessage(targetuser, message)
+    return OFFLINE
+
+def offlineMessage(targetuser, message):
+    if targetuser not in offlineMessages:
+        offlineMessages[targetuser] = []
+
+    now = datetime.now()
+    nowstr = "[" + now.strftime("%Y-%m-%d %H:%M:%S") + "]"
+    message = nowstr + message
+
+    offlineMessages[targetuser].append(message)
+    print (offlineMessages)
+
+
 def broadcast (sourcesocket, message):
     sentToAll = True
     sourceuser = usermap[sourcesocket]
-    for socket in socketlist:
-        if socket != welcomesocket and socket != sourcesocket:
+    for sock in socketlist:
+        if sock != welcomesocket and sock != sourcesocket:
             try:
                 # if source socket and target sockets are linked to users
                 # only send message if target user is not blocking source user
-                if usermap[socket] and sourceuser:
-                    user = usermap[socket]
+                if usermap[sock] and sourceuser:
+                    user = usermap[sock]
                     if user.name in blocklists:
                         if user.isBlocking(sourceuser.name):
                             sentToAll = False
                         else:
-                            socket.send(bytes(message, 'utf-8'))
+                            sock.send(bytes(message, 'utf-8'))
                     else:
-                        socket.send(bytes(message, 'utf-8'))
+                        sock.send(bytes(message, 'utf-8'))
                 else:
-                    socket.send(bytes(message, 'utf-8'))
+                    sock.send(bytes(message, 'utf-8'))
             except Exception as err:
                 print (err)
-                socket.close()
-                if socket in socketlist:
-                    socketlist.remove(socket)
+                sock.close()
+                if sock in socketlist:
+                    socketlist.remove(sock)
 
     return sentToAll
 
