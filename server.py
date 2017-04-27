@@ -128,6 +128,21 @@ class User(object):
                 self.sock.sendall(bytes(output, 'utf-8'))
                 self.logout()
 
+            elif (command == "broadcast"):
+                if parameter:
+                    try:
+                        broadcastMessage = "\r[Broadcast] " + self.name + ": " + parameter
+                        sentToAll = broadcast(self.sock, broadcastMessage)
+                        if sentToAll:
+                            output = "Broadcast message sent"
+                        else:
+                            output = "Broadcast message sent\n"
+                            output += "This message could not be sent to some recipients."
+                    except Exception as err:
+                        output = "Invalid parameter. Usage: broadcast <message>"
+                else:
+                    output = "Usage: broadcast <message>"
+
             elif (command == "whoelse"):
                 output = getOnlineUsers(self.sock)
 
@@ -145,6 +160,7 @@ class User(object):
                     try:
                         output = self.block(parameter)
                     except Exception as err:
+                        print(err)
                         output = "Invalid parameter. Usage: block <user to block>"
                 else:
                     output = "Usage: block <user to block>"
@@ -225,6 +241,7 @@ def serve(port, timeout, blockduration):
     welcomesocket.close()
 
 def broadcast (sourcesocket, message):
+    sentToAll = True
     sourceuser = usermap[sourcesocket]
     for socket in socketlist:
         if socket != welcomesocket and socket != sourcesocket:
@@ -233,7 +250,9 @@ def broadcast (sourcesocket, message):
                 # only send message if target user is not blocking source user
                 if usermap[socket] and sourceuser:
                     user = usermap[socket]
-                    if not user.isBlocking(sourceuser.name):
+                    if user.isBlocking(sourceuser.name):
+                        sentToAll = False
+                    else:
                         socket.send(bytes(message, 'utf-8'))
                 else:
                     socket.send(bytes(message, 'utf-8'))
@@ -242,6 +261,8 @@ def broadcast (sourcesocket, message):
                 socket.close()
                 if socket in socketlist:
                     socketlist.remove(socket)
+
+    return sentToAll
 
 def getOnlineUsers (sourcesocket):
     output = ""
