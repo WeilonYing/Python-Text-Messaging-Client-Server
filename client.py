@@ -8,6 +8,7 @@ import socket
 import sys
 import select
 
+EOF_FLAG = "0xDEADBEEF" # arbitrarily defined message to tell client to close connection
 
 # Establish connection with message server and send commands
 def connect (host, port):
@@ -28,10 +29,16 @@ def connect (host, port):
                         # we have incoming message
                         message = sock.recv(2048)
                         if not message:
+                            sock.close()
                             print ("\nDisconnected from server")
                             sys.exit(0)
                         else:
                             message = str(message, "utf-8").rstrip()
+                            if (message == EOF_FLAG):
+                                sock.close()
+                                print("\nDisconnected from server")
+                                sys.exit(0)
+
                             print (message)
                             print (" > ", end="", flush=True)
                     else:

@@ -33,6 +33,9 @@ SUCCESS = 0
 BLOCKED = 1
 OFFLINE = 2
 
+# Arbitrarily defined message to tell client to close connection
+EOF_FLAG = "0xDEADBEEF"
+
 # Global timeout variable
 timeout = 300 # default value 300
 
@@ -160,6 +163,7 @@ class User(object):
         usermap[self.sock] = None
         socketlist.remove(self.sock)
         self.loggedIn = False
+        self.sock.sendall(bytes(EOF_FLAG, 'utf-8'))
         self.sock.close()
         self.sock = None
 
@@ -347,7 +351,7 @@ def checktimeout():
                 if (difference > timeout):
                     sock.sendall(bytes("\r" + message, 'utf-8'))
                     user.logout()
-                    sock.sendall(None)
+                    #sock.sendall(None)
     except KeyboardInterrupt:
         return # simply exit the repetition
 
