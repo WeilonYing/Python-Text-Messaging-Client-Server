@@ -165,10 +165,10 @@ class User(object):
                             self.loggedIn = True
                             self.name = self.username
                             output = "You have logged in as " + self.name
-                            broadcast(self.sock, self.name + " has logged in")
-
+                            
                             loginhistory[self.name] = datetime.now()
                             self.sock.sendall(bytes(output, 'utf-8'))
+                            broadcast(self.sock, self.name + " has logged in")
                             self.getOfflineMessages()
                             return
                 if (not self.loggedIn):
@@ -270,11 +270,8 @@ class User(object):
                     try:
                         broadcastMessage = "[Broadcast] " + self.name + ": " + parameter
                         sentToAll = broadcast(self.sock, broadcastMessage)
-                        if sentToAll:
-                            output = "Broadcast message sent"
-                        else:
-                            output = "Broadcast message sent\n"
-                            output += "This message could not be sent to some recipients."
+                        if not sentToAll:
+                            output = "Your broadcast message could not be sent to some users."
                     except Exception as err:
                         output = "Invalid parameter. Usage: broadcast <message>"
                 else:
@@ -333,13 +330,13 @@ class User(object):
 def serve(port):
     global welcomesocket
     welcomesocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    hostaddress = "192.168.0.17"
+    hostaddress = getHostAddress()
     welcomesocket.bind((hostaddress, port))
     welcomesocket.listen(20)
 
     socketlist.append(welcomesocket)
 
-    print ("Server started")
+    print ("Server started. Listening on " + hostaddress + ":" + str(port))
 
     try:
         checktimeout()
@@ -355,7 +352,7 @@ def serve(port):
                             clientsocket.close()
                     else:
                         socketlist.append(clientsocket)
-                        clientsocket.sendall(bytes("Hello! ", 'utf-8'))
+                        #clientsocket.sendall(bytes("Hello! ", 'utf-8'))
                         newUser = User(address, clientsocket)
                         usermap[clientsocket] = newUser
                         usermap[clientsocket].process()
@@ -370,7 +367,7 @@ def serve(port):
                                 socketlist.remove(sock)
                             if sock in usermap:
                                 user = usermap[sock]
-                                if user:
+                                if user and len(user.name) > 0:
                                     loginhistory[user.name] = datetime.now()
                                     broadcast(sock, user.name + " has logged out")
                                     usermap[sock] = None
@@ -379,7 +376,7 @@ def serve(port):
                             socketlist.remove(sock)
                         if sock in usermap:
                             user = usermap[sock]
-                            if user:
+                            if user and len(user.name) > 0:
                                 loginhistory[user.name] = datetime.now()
                                 broadcast(sock, user.name + " has logged out")
                                 usermap[sock] = None
@@ -394,8 +391,7 @@ def serve(port):
 # again after 1 second
 def checktimeout():
     try:
-        threading.Timer(1.0, checktimeout).start()
-        #message = "You have timed out. Logging you out."
+        threading.Timer(1.0, checktimeout).start() # set a timer to call itself in 1 second
 
         now = datetime.now()
         # timeout currently logged in users
@@ -461,7 +457,7 @@ def broadcast (sourcesocket, message):
 
     sourceuser = usermap[sourcesocket]
     for sock in socketlist:
-        if sock != welcomesocket and sock != sourcesocket:
+        if sock != welcomesocket:
             try:
                 # if source socket and target sockets are linked to users
                 # only send message if target user is not blocking source user
@@ -497,7 +493,7 @@ def getOnlineUsers (sourcesocket):
     for sock in usermap:
         if sock != sourcesocket:
             user = usermap[sock]
-            if user:
+            if user and len(user.name) > 0:
                 output += user.name + "\n"
     if len(output) == 0:
         output = "No other users online.\n"
@@ -532,6 +528,21 @@ def getUsersSince (sourcesocket, sec):
         output = header + output
 
     return output
+
+# Get the IP address of this server
+# Written with help from http://stackoverflow.com/a/28950776
+def getHostAddress ():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # doesn't need to be reachable
+        sock.connect(("10.255.255.255", 80)) # Dummy IP address
+        address = sock.getsockname()[0]
+    except:
+        address = "127.0.0.1"
+    finally:
+        sock.close()
+        
+    return address
 
 if __name__ == "__main__":
     if (len(sys.argv[1:]) >= 3):

@@ -10,6 +10,21 @@ import select
 
 EOF_FLAG = "0xDEADBEEF" # arbitrarily defined message to tell client to close connection
 
+# Get the IP address of this client
+# Written with help from http://stackoverflow.com/a/28950776
+def getHostAddress ():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # doesn't need to be reachable
+        sock.connect(("10.255.255.255", 80)) # Dummy IP address
+        address = sock.getsockname()[0]
+    except:
+        address = "127.0.0.1"
+    finally:
+        sock.close()
+        
+    return address
+    
 # Establish connection with message server and send commands
 def connect (host, port):
     # Create a socket (SOCK_STREAM = TCP socket)
@@ -58,6 +73,8 @@ def connect (host, port):
 if (len(sys.argv[1:]) >= 2):
     try:
         host = sys.argv[1]
+        if host == "localhost" or host == "127.0.0.1":
+            host = getHostAddress()
         port = int(sys.argv[2])
         connect(host, port)
 
