@@ -73,8 +73,13 @@ class User(object):
         elif (username in blocklist):
             return username + " has already been blocked."
         else:
-            blocklist.append(username)
-            return username + " has been blocked."
+            with open("credentials.txt") as f:
+                for line in f:
+                    credential = line.split(" ")
+                    if credential[0].rstrip() == username:
+                        blocklist.append(username)
+                        return username + " has been blocked"
+            return username + " does not exist and cannot be blocked."
 
     def unblock(self, username):
         self.initBlocklistIfNotExists()
@@ -83,7 +88,7 @@ class User(object):
         if (username == self.name):
             return "You cannot unblock yourself!"
         if (username not in blocklist):
-            return username + " is already unblocked."
+            return username + " is not on your block list."
         else:
             blocklist.remove(username)
             return username + " has been unblocked."
@@ -114,15 +119,17 @@ class User(object):
         else:
             return False
 
+    # if user is not logged in, we first go through the authentication process
     def authenticate(self, message=None):
         output = 'null'
+        # if we get a blank message, remind the user what to do
         if not message:
             if not self.username:
                 output = "Please enter your username"
             elif not self.password:
                 output = "Please enter your password"
         else:
-
+            # if we haven't received username and password, first valid message will be taken as username
             if not self.username and not self.password:
                 self.username = message
                 validUsername = False
@@ -135,10 +142,7 @@ class User(object):
 
                 if validUsername:
                     self.numTries = 0
-                    if (self.username in blockedFromServer and blockedFromServer[self.username]):
-                        self.sock.send(bytes("Your account is currently blocked.", 'utf-8'))
-                        self.logout()
-                        return
+
                     if isOnline(self.username):
                         self.sock.send(bytes(self.username + " is already online on another session.", 'utf-8'))
                         self.logout()
@@ -153,6 +157,8 @@ class User(object):
                         return
                     self.username = None
                     output = "Invalid username. Please enter your username."
+
+            # if only the password isn't received, then the next valid message will be the password
             elif not self.password:
                 self.password = message
                 with open("credentials.txt") as f:
@@ -160,12 +166,17 @@ class User(object):
                         credential = line.split(" ")
 
                         if (self.username == credential[0].rstrip()) and (self.password == credential[1].rstrip()):
+                            # check if account blocked for multiple login failure
+                            if (self.username in blockedFromServer and blockedFromServer[self.username]):
+                                self.sock.send(bytes("Your account is currently blocked due to multiple login failures. Please try again later. ", 'utf-8'))
+                                self.logout()
+                                return
                             self.numTries = 0
 
                             self.loggedIn = True
                             self.name = self.username
                             output = "You have logged in as " + self.name
-                            
+
                             loginhistory[self.name] = datetime.now()
                             self.sock.sendall(bytes(output, 'utf-8'))
                             broadcast(self.sock, self.name + " has logged in")
@@ -181,6 +192,8 @@ class User(object):
                         return
                     output = "Incorrect password. Please try again."
                     self.password = None
+
+            # if we somehow end up in neither of the situations above, then reset the login procedure
             else:
                 output = "An error has occurred. Please try again."
                 output += "Please enter your username"
@@ -188,6 +201,7 @@ class User(object):
                 self.password = None
         self.sock.sendall(bytes(output, 'utf-8'))
 
+    # check and receive offline messages sent to this user
     def getOfflineMessages(self):
         if self.name in offlineMessages:
             messageList = offlineMessages[self.name]
@@ -238,16 +252,16 @@ class User(object):
             elif (command == "message"):
                 if parameter:
                     try:
-                        target, content = parameter.split(" ", maxsplit=1)
+                        target, rawcontent = parameter.split(" ", maxsplit=1)
                         prefix = "[" + self.name + " -> me]: "
-                        content = prefix + content
+                        content = prefix + rawcontent
 
                         if (target != self.name):
                             result = sendmessage(self.sock, target, content)
                             if (result == SUCCESS):
-                                output = "[me -> " + target + "]: " + content
+                                output = "[me -> " + target + "]: " + rawcontent
                                 now = datetime.now()
-                                nowstr = "[" + now.strftime("%Y-%m-%d %H:%M:%S") + "]"
+                                nowstr = "[" + now.strftime("%Y-%m-%d %H:%M:%S") + "] "
                                 output = nowstr + output
                             elif (result == BLOCKED):
                                 output = target + " has blocked you. You cannot send messages to them."
@@ -271,7 +285,9 @@ class User(object):
                         broadcastMessage = "[Broadcast] " + self.name + ": " + parameter
                         sentToAll = broadcast(self.sock, broadcastMessage)
                         if not sentToAll:
-                            output = "Your broadcast message could not be sent to some users."
+                            output = "\nYour broadcast message could not be sent to some users."
+                        else:
+                            output = " " # empty message, since broadcast will be sending the message instead
                     except Exception as err:
                         output = "Invalid parameter. Usage: broadcast <message>"
                 else:
@@ -348,7 +364,7 @@ def serve(port):
                 if sock == welcomesocket:
                     clientsocket, address = welcomesocket.accept()
                     if address[0] in blockedFromServer and blockedFromServer[address[0]] is not None:
-                            clientsocket.sendall(bytes("Your IP is currently blocked. ", 'utf-8'))
+                            clientsocket.sendall(bytes("Your IP is currently blocked. Please try again later. ", 'utf-8'))
                             clientsocket.close()
                     else:
                         socketlist.append(clientsocket)
@@ -502,6 +518,8 @@ def getOnlineUsers (sourcesocket):
     return output
 
 def getUsersSince (sourcesocket, sec):
+    if sec < 0:
+        sec = 0
     currentuser = usermap[sourcesocket].name
     output = ''
     now = datetime.now()
@@ -541,7 +559,7 @@ def getHostAddress ():
         address = "127.0.0.1"
     finally:
         sock.close()
-        
+
     return address
 
 if __name__ == "__main__":
