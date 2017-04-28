@@ -36,7 +36,7 @@ def connect (host, port):
                             message = str(message, "utf-8").rstrip()
                             if (message == EOF_FLAG):
                                 sock.close()
-                                print("\nDisconnected from server")
+                                print("\nDisconnected from server due to timeout")
                                 sys.exit(0)
 
                             print (message)

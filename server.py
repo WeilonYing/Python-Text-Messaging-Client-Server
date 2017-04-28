@@ -35,6 +35,7 @@ OFFLINE = 2
 
 # Arbitrarily defined message to tell client to close connection
 EOF_FLAG = "0xDEADBEEF"
+MAX_TRIES = 3
 
 # Global timeout variable
 timeout = 300 # default value 300
@@ -116,47 +117,59 @@ class User(object):
                 output = "Please enter your username"
             elif not self.password:
                 output = "Please enter your password"
-
-        elif not self.username and not self.password:
-            self.username = message
-            validUsername = False
-            with open("credentials.txt") as f:
-                for line in f:
-                    credential = line.split(" ")
-                    if (self.username == credential[0].rstrip()):
-                        validUsername = True
-                        break
-
-            if validUsername:
-                output = "Please enter your password"
-            else:
-                self.username = None
-                output = "Invalid username. Please enter your username."
-        elif not self.password:
-            self.password = message
-            with open("credentials.txt") as f:
-                for line in f:
-                    credential = line.split(" ")
-
-                    if (self.username == credential[0].rstrip()) and (self.password == credential[1].rstrip()):
-
-                        self.loggedIn = True
-                        self.name = self.username
-                        output = "You have logged in as " + self.name
-                        broadcast(self.sock, self.name + " has logged in")
-
-                        loginhistory[self.name] = datetime.now()
-                        self.sock.sendall(bytes(output, 'utf-8'))
-                        self.getOfflineMessages()
-                        return
-            if (not self.loggedIn):
-                output = "Incorrect password. Please try again."
-                self.password = None
         else:
-            output = "Incorrect username or password. Please try again."
-            output += "Please enter your username"
-            self.username = None
-            self.password = None
+
+            if not self.username and not self.password:
+                self.username = message
+                validUsername = False
+                with open("credentials.txt") as f:
+                    for line in f:
+                        credential = line.split(" ")
+                        if (self.username == credential[0].rstrip()):
+                            validUsername = True
+                            break
+
+                if validUsername:
+                    self.numTries = 0
+                    output = "Please enter your password"
+                else:
+                    self.numTries += 1
+                    if (self.numTries >= MAX_TRIES):
+                        self.sock.send(bytes("Too many tries. You have been blocked.", 'utf-8'))
+                        self.logout()
+                        return
+                    self.username = None
+                    output = "Invalid username. Please enter your username."
+            elif not self.password:
+                self.password = message
+                with open("credentials.txt") as f:
+                    for line in f:
+                        credential = line.split(" ")
+
+                        if (self.username == credential[0].rstrip()) and (self.password == credential[1].rstrip()):
+                            self.numTries = 0
+
+                            self.loggedIn = True
+                            self.name = self.username
+                            output = "You have logged in as " + self.name
+                            broadcast(self.sock, self.name + " has logged in")
+
+                            loginhistory[self.name] = datetime.now()
+                            self.sock.sendall(bytes(output, 'utf-8'))
+                            self.getOfflineMessages()
+                            return
+                if (not self.loggedIn):
+                    self.numTries += 1
+                    if (self.numTries >= MAX_TRIES):
+                        self.logout()
+                        return
+                    output = "Incorrect password. Please try again."
+                    self.password = None
+            else:
+                output = "An error has occurred. Please try again."
+                output += "Please enter your username"
+                self.username = None
+                self.password = None
         self.sock.sendall(bytes(output, 'utf-8'))
 
     def getOfflineMessages(self):
@@ -172,13 +185,16 @@ class User(object):
         offlineMessages[self.name] = []
 
 
-    def logout(self):
-        loginhistory[self.name] = datetime.now()
-        broadcast(self.sock, self.name + " has logged out")
+    def logout(self, timeoutDisconnect=False):
+        if (self.loggedIn):
+            broadcast(self.sock, self.name + " has logged out")
+            loginhistory[self.name] = datetime.now()
+
         usermap[self.sock] = None
         socketlist.remove(self.sock)
         self.loggedIn = False
-        self.sock.sendall(bytes(EOF_FLAG, 'utf-8'))
+        if (timeoutDisconnect):
+            self.sock.sendall(bytes(EOF_FLAG, 'utf-8'))
         self.sock.close()
         self.sock = None
 
@@ -356,7 +372,7 @@ def serve(port):
 def checktimeout():
     try:
         threading.Timer(1.0, checktimeout).start()
-        message = "You have timed out. Logging you out."
+        #message = "You have timed out. Logging you out."
 
         now = datetime.now()
         for sock in usermap:
@@ -364,8 +380,8 @@ def checktimeout():
             if user:
                 difference = (now - user.lastReceived).total_seconds()
                 if (difference > timeout):
-                    sock.sendall(bytes("\r" + message, 'utf-8'))
-                    user.logout()
+                    #sock.sendall(bytes("\r" + message, 'utf-8'))
+                    user.logout(True)
                     #sock.sendall(None)
     except KeyboardInterrupt:
         return # simply exit the repetition
