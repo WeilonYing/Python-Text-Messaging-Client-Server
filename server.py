@@ -19,6 +19,9 @@ from datetime import datetime, timedelta
 usermap = {}
 socketlist = []
 
+# Global dictionary to store blocked users/IP's and time of their blocking
+blockedFromServer = {}
+
 # Global dictionary to store users' last login times since server start
 loginhistory = {}
 
@@ -45,7 +48,8 @@ blockDuration = 300 # default value 300
 class User(object):
     def __init__(self, host, sock):
         self.name = ''
-        self.host = host
+        self.address = host[0]
+        self.port = host[1]
         self.sock = sock
 
         self.loggedIn = False
@@ -131,11 +135,16 @@ class User(object):
 
                 if validUsername:
                     self.numTries = 0
+                    if (self.username in blockedFromServer and blockedFromServer[self.username]):
+                        self.sock.send(bytes("Your account is currently blocked.", 'utf-8'))
+                        self.logout()
+                        return
                     output = "Please enter your password"
                 else:
                     self.numTries += 1
                     if (self.numTries >= MAX_TRIES):
-                        self.sock.send(bytes("Too many tries. You have been blocked.", 'utf-8'))
+                        self.sock.send(bytes("Too many incorrect tries. Your IP has been blocked for " + str(blockDuration) + " seconds.", 'utf-8'))
+                        blockFromServer(self.address)
                         self.logout()
                         return
                     self.username = None
@@ -161,6 +170,9 @@ class User(object):
                 if (not self.loggedIn):
                     self.numTries += 1
                     if (self.numTries >= MAX_TRIES):
+                        self.sock.send(bytes("Too many incorrect tries. Your account has been blocked for " + str(blockDuration) + " seconds.", 'utf-8'))
+                        blockFromServer(self.username)
+
                         self.logout()
                         return
                     output = "Incorrect password. Please try again."
@@ -333,11 +345,15 @@ def serve(port):
             for sock in readready:
                 if sock == welcomesocket:
                     clientsocket, address = welcomesocket.accept()
-                    socketlist.append(clientsocket)
-                    clientsocket.sendall(bytes("Hello! ", 'utf-8'))
-                    newUser = User(address, clientsocket)
-                    usermap[clientsocket] = newUser
-                    usermap[clientsocket].process()
+                    if address[0] in blockedFromServer and blockedFromServer[address[0]] is not None:
+                            clientsocket.sendall(bytes("Your IP is currently blocked. ", 'utf-8'))
+                            clientsocket.close()
+                    else:
+                        socketlist.append(clientsocket)
+                        clientsocket.sendall(bytes("Hello! ", 'utf-8'))
+                        newUser = User(address, clientsocket)
+                        usermap[clientsocket] = newUser
+                        usermap[clientsocket].process()
 
                 else:
                     try:
@@ -375,16 +391,28 @@ def checktimeout():
         #message = "You have timed out. Logging you out."
 
         now = datetime.now()
+        # timeout currently logged in users
         for sock in usermap:
             user = usermap[sock]
             if user:
                 difference = (now - user.lastReceived).total_seconds()
                 if (difference > timeout):
-                    #sock.sendall(bytes("\r" + message, 'utf-8'))
                     user.logout(True)
-                    #sock.sendall(None)
+
+        # timeout blocked users and IP addresses
+        for name in blockedFromServer:
+            blockedTime = blockedFromServer[name]
+            if blockedTime:
+                difference = (now - blockedTime).total_seconds()
+                if (difference > blockDuration):
+                    blockedFromServer[name] = None
+
     except KeyboardInterrupt:
         return # simply exit the repetition
+
+def blockFromServer(name):
+    now = datetime.now()
+    blockedFromServer[name] = now
 
 def sendmessage (sourcesocket, targetuser, message):
     sourceuser = usermap[sourcesocket]
@@ -497,7 +525,7 @@ if __name__ == "__main__":
         debug = False
 
         port = int(args[0])
-        blockduration = int(args[1])
+        blockDuration = int(args[1])
         timeout = int(args[2]) # timeout is a global variable
 
         if (len(args) > 3):
