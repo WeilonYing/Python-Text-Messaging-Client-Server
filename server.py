@@ -38,6 +38,7 @@ EOF_FLAG = "0xDEADBEEF"
 
 # Global timeout variable
 timeout = 300 # default value 300
+blockDuration = 300 # default value 300
 
 # User object. Has user-specfic functions and attributes.
 class User(object):
@@ -49,6 +50,7 @@ class User(object):
         self.loggedIn = False
         self.username = None
         self.password = None
+        self.numTries = 0
         self.lastReceived = datetime.now() # stores last time we heard from this user
         self.initBlocklistIfNotExists()
 
@@ -110,11 +112,26 @@ class User(object):
     def authenticate(self, message=None):
         output = 'null'
         if not message:
-            output = "Please enter your username"
+            if not self.username:
+                output = "Please enter your username"
+            elif not self.password:
+                output = "Please enter your password"
 
         elif not self.username and not self.password:
             self.username = message
-            output = "Please enter your password"
+            validUsername = False
+            with open("credentials.txt") as f:
+                for line in f:
+                    credential = line.split(" ")
+                    if (self.username == credential[0].rstrip()):
+                        validUsername = True
+                        break
+
+            if validUsername:
+                output = "Please enter your password"
+            else:
+                self.username = None
+                output = "Invalid username. Please enter your username."
         elif not self.password:
             self.password = message
             with open("credentials.txt") as f:
@@ -133,9 +150,7 @@ class User(object):
                         self.getOfflineMessages()
                         return
             if (not self.loggedIn):
-                output = "Incorrect username or password\n"
-                output += "Please enter your username"
-                self.username = None
+                output = "Incorrect password. Please try again."
                 self.password = None
         else:
             output = "Incorrect username or password. Please try again."
@@ -283,7 +298,7 @@ class User(object):
             if self.sock:
                 self.sock.sendall(bytes(output, 'utf-8'))
 
-def serve(port, blockduration):
+def serve(port):
     global welcomesocket
     welcomesocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     welcomesocket.bind(('localhost', port))
@@ -472,7 +487,7 @@ if __name__ == "__main__":
         if (len(args) > 3):
             if args[3] == '-d':
                 debug = True
-        serve(port, blockduration)
+        serve(port)
 
     else:
         print ("Usage: python3 server.py server_port block_duration timeout [-d]")
