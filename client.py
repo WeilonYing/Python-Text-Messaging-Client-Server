@@ -1,7 +1,13 @@
 #!/usr/bin/python3
+# NOTE: This requires Python 3 to run
 # COMP 3331 17s1 Assignment 1 - Instant Messaging Client
-# Weilon Ying z5059444
-# This is a Python 3 program
+# client.py
+# This is the client program for the COMP3331 Networks Assignment 1
+# Written by Weilon Ying (z5059444)
+# Credits:
+#   Some of the code was written with assistance from http://code.activestate.com/recipes/531824-chat-server-client-using-selectselect/.
+#   This included the use of select to accept connections from multiple clients, and establishing connection from the client side.
+#   The function getHostAddress() was written with some assistance from http://stackoverflow.com/a/28950776
 
 import os
 import socket
@@ -22,17 +28,15 @@ def getHostAddress ():
         address = "127.0.0.1"
     finally:
         sock.close()
-        
+
     return address
-    
+
 # Establish connection with message server and send commands
 def connect (host, port):
     # Create a socket (SOCK_STREAM = TCP socket)
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         # Connect to server and send data
         sock.connect((host, port))
-        # received = str(sock.recv(1024), "utf-8")
-        # print (received)
         try:
             while (True):
                 socket_list = [sys.stdin, sock]
@@ -85,5 +89,3 @@ if (len(sys.argv[1:]) >= 2):
 else:
     print ("Usage: python3 client.py <server IP> <server port>")
 
-#print ("Sent:       {}".format(data))
-#print ("Received:   {}".format(received))

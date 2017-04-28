@@ -1,7 +1,13 @@
-# COMP3331 Assignment
-# Server
-# Weilon Ying (z5059444)
-# Credits: Written with some assistance from code.activestate.com/recipes/531824-chat-server-client-using-selectselect/
+#!/usr/bin/python3
+# NOTE: This requires Python 3 to run
+# COMP 3331 17s1 Assignment 1 - Instant Messaging Server
+# server.py
+# This is the server program for the COMP3331 Networks Assignment 1
+# Written by Weilon Ying (z5059444)
+# Credits:
+#   Some of the code was written with assistance from http://code.activestate.com/recipes/531824-chat-server-client-using-selectselect/.
+#   This included the use of select to accept connections from multiple clients, and establishing connection from the client side.
+#   The function getHostAddress() was written with some assistance from http://stackoverflow.com/a/28950776
 
 import os
 import select
@@ -343,6 +349,8 @@ class User(object):
             if self.sock:
                 self.sock.sendall(bytes(output, 'utf-8'))
 
+# main server function to send and receive data from clients
+# Some of the code in this function was written with some assistance from http://code.activestate.com/recipes/531824-chat-server-client-using-selectselect/.
 def serve(port):
     global welcomesocket
     welcomesocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
