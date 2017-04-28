@@ -333,7 +333,8 @@ class User(object):
 def serve(port):
     global welcomesocket
     welcomesocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    welcomesocket.bind(('localhost', port))
+    hostaddress = "192.168.0.17"
+    welcomesocket.bind((hostaddress, port))
     welcomesocket.listen(20)
 
     socketlist.append(welcomesocket)
@@ -369,17 +370,19 @@ def serve(port):
                                 socketlist.remove(sock)
                             if sock in usermap:
                                 user = usermap[sock]
-                                loginhistory[user.name] = datetime.now()
-                                broadcast(sock, user.name + " has logged out")
-                                usermap[sock] = None
+                                if user:
+                                    loginhistory[user.name] = datetime.now()
+                                    broadcast(sock, user.name + " has logged out")
+                                    usermap[sock] = None
                     except:
                         if sock in socketlist:
                             socketlist.remove(sock)
                         if sock in usermap:
                             user = usermap[sock]
-                            loginhistory[user.name] = datetime.now()
-                            broadcast(sock, user.name + " has logged out")
-                            usermap[sock] = None
+                            if user:
+                                loginhistory[user.name] = datetime.now()
+                                broadcast(sock, user.name + " has logged out")
+                                usermap[sock] = None
     except KeyboardInterrupt: # close everything
         for sock in socketlist:
             sock.close()
