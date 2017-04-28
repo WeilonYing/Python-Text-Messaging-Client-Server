@@ -139,6 +139,10 @@ class User(object):
                         self.sock.send(bytes("Your account is currently blocked.", 'utf-8'))
                         self.logout()
                         return
+                    if isOnline(self.username):
+                        self.sock.send(bytes(self.username + " is already online on another session.", 'utf-8'))
+                        self.logout()
+                        return
                     output = "Please enter your password"
                 else:
                     self.numTries += 1
@@ -476,6 +480,14 @@ def broadcast (sourcesocket, message):
                     socketlist.remove(sock)
 
     return sentToAll
+
+def isOnline (name):
+    for sock in usermap:
+        user = usermap[sock]
+        if user:
+            if user.name == name:
+                return True
+    return False
 
 def getOnlineUsers (sourcesocket):
     output = ""
